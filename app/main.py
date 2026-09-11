@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.analyses import router as analyses_router
 from app.api.analyze import router as analyze_router
+from app.api.auth import router as auth_router
 from app.api.jobs import router as jobs_router
 from app.config import get_settings
 from app.exceptions import AppError
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION)
+app.include_router(auth_router)
 app.include_router(analyze_router)
 app.include_router(jobs_router)
 app.include_router(analyses_router)

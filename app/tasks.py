@@ -1,4 +1,4 @@
-"""Celery-задача: выполняет анализ в фоне и сохраняет результат в PostgreSQL."""
+"""Celery-задача: выполняет анализ в фоне, сохраняет результат в PostgreSQL для владельца job."""
 
 from app import models
 from app.celery_app import celery_app
@@ -32,6 +32,7 @@ def process_analysis_job(self, job_id: str) -> None:
             return
 
         analysis = models.Analysis(
+            user_id=job.user_id,
             vacancy=job.vacancy,
             skills=job.skills,
             match_percent=result.match_percent,

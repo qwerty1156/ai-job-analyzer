@@ -2,9 +2,7 @@
 Бизнес-логика анализа вакансии.
 
     run_analysis()     — чистая функция: валидация -> Redis-кэш -> AI/fallback -> кэш.
-                          Используется Celery-воркером.
-    enqueue_analysis()  — создаёт Job и ставит фоновую задачу в очередь Celery;
-                          вызывается из POST /analyze, который сразу отвечает 202.
+    enqueue_analysis()  — создаёт Job для текущего пользователя и ставит задачу в очередь Celery.
 """
 
 from sqlalchemy.orm import Session
@@ -48,12 +46,12 @@ def run_analysis(vacancy: str, skills: list[str]) -> AIAnalysisResult:
     return result
 
 
-def enqueue_analysis(db: Session, vacancy: str, skills: list[str]) -> models.Job:
+def enqueue_analysis(db: Session, user: models.User, vacancy: str, skills: list[str]) -> models.Job:
     validate_vacancy_and_skills(vacancy, skills)
 
     from app.tasks import process_analysis_job
 
-    job = models.Job(vacancy=vacancy, skills=skills, status="pending")
+    job = models.Job(user_id=user.id, vacancy=vacancy, skills=skills, status="pending")
     db.add(job)
     db.commit()
     db.refresh(job)

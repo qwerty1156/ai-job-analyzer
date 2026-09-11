@@ -1,20 +1,23 @@
-"""GET /jobs/{id} — статус фоновой задачи анализа."""
+"""GET /jobs/{id} — статус фоновой задачи текущего пользователя."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app import models
-from app.db import get_db
+from app.deps import get_current_user, get_db
+from app.exceptions import NotFoundError
 from app.schemas import AnalysisDetail, JobStatusResponse
 
 router = APIRouter(tags=["jobs"])
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatusResponse)
-def get_job(job_id: str, db: Session = Depends(get_db)) -> JobStatusResponse:
+def get_job(
+    job_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+) -> JobStatusResponse:
     job = db.get(models.Job, job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Задача не найдена.")
+    if job is None or job.user_id != user.id:
+        raise NotFoundError("Задача не найдена.")
 
     analysis = db.get(models.Analysis, job.analysis_id) if job.analysis_id else None
     return JobStatusResponse(
