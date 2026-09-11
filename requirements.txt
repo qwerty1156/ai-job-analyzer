@@ -10,3 +10,6 @@ celery
 PyJWT
 passlib[bcrypt]
 email-validator
+pypdf
+python-docx
+python-multipart
