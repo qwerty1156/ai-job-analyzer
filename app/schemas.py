@@ -1,4 +1,4 @@
-"""Pydantic-схемы запроса/ответа для эндпоинта /analyze."""
+"""Pydantic-схемы запроса/ответа."""
 
 from pydantic import BaseModel, Field
 
@@ -8,7 +8,15 @@ class AnalyzeRequest(BaseModel):
     skills: list[str] = Field(default_factory=list)
 
 
-class AnalyzeResponse(BaseModel):
+class AIAnalysisResult(BaseModel):
+    """Строго структурированный результат анализа, который обязан вернуть LLM."""
+
     match_percent: int = Field(..., ge=0, le=100)
-    matched: list[str] = Field(default_factory=list)
-    missing: list[str] = Field(default_factory=list)
+    matched_skills: list[str] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    summary: str
+
+
+class AnalyzeResponse(AIAnalysisResult):
+    pass
