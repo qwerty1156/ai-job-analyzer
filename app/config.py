@@ -21,6 +21,9 @@ class Settings:
         "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/ai_job_analyzer"
     )
 
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL_SECONDS", "3600"))
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -1,4 +1,4 @@
-"""Сервисный слой: валидация -> AI/fallback -> сохранение в PostgreSQL -> результат."""
+"""Сервисный слой: валидация -> Redis-кэш -> AI/fallback -> PostgreSQL -> результат."""
 
 from sqlalchemy.orm import Session
 
@@ -6,7 +6,7 @@ from app import models
 from app.config import get_settings
 from app.exceptions import InvalidRequestError
 from app.services import ai as ai_service
-from app.services import fallback
+from app.services import cache, fallback
 
 MIN_VACANCY_LENGTH = 10
 MAX_VACANCY_LENGTH = 8000
@@ -27,10 +27,13 @@ def analyze_vacancy(db: Session, vacancy: str, skills: list[str]) -> models.Anal
     _validate(vacancy, skills)
     settings = get_settings()
 
-    if settings.AI_PROVIDER == "none":
-        result = fallback.analyze_stub(vacancy, skills)
-    else:
-        result = ai_service.analyze_with_ai(vacancy, skills)
+    result = cache.get_cached(vacancy, skills)
+    if result is None:
+        if settings.AI_PROVIDER == "none":
+            result = fallback.analyze_stub(vacancy, skills)
+        else:
+            result = ai_service.analyze_with_ai(vacancy, skills)
+        cache.set_cached(vacancy, skills, result)
 
     analysis = models.Analysis(
         vacancy=vacancy,
