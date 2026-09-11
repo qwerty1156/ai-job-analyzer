@@ -17,6 +17,10 @@ class Settings:
     AI_API_KEY: str | None = os.getenv("AI_API_KEY")
     AI_MODEL: str = os.getenv("AI_MODEL", "claude-sonnet-4-6")
 
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/ai_job_analyzer"
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
