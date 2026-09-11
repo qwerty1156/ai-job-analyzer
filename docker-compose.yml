@@ -1,0 +1,68 @@
+services:
+  api:
+    build: .
+    container_name: ai-job-analyzer-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Внутри docker-compose сервисы обращаются друг к другу по имени сервиса,
+      # а не localhost — переопределяем адреса из .env.
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/ai_job_analyzer
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./app:/code/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build: .
+    container_name: ai-job-analyzer-worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/ai_job_analyzer
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./app:/code/app
+    command: celery -A app.celery_app worker --loglevel=info
+
+  db:
+    image: postgres:16-alpine
+    container_name: ai-job-analyzer-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_job_analyzer
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-job-analyzer-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
