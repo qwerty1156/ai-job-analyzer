@@ -2,7 +2,6 @@ fastapi
 uvicorn
 python-dotenv
 pydantic
-anthropic
 sqlalchemy
 psycopg[binary]
 redis
@@ -13,3 +12,4 @@ email-validator
 pypdf
 python-docx
 python-multipart
+google-genai
