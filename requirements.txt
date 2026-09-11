@@ -13,3 +13,5 @@ pypdf
 python-docx
 python-multipart
 google-genai
+httpx
+pytest
