@@ -1,0 +1,93 @@
+# Render Blueprint — деплой backend одной кнопкой ("New +" -> "Blueprint" -> указать репозиторий).
+#
+# Поднимает: web-сервис (api), background worker (Celery), managed PostgreSQL, managed Redis.
+# Frontend сюда НЕ входит — он деплоится отдельно на Vercel (см. DEPLOYMENT.md).
+#
+# После первого деплоя зайдите в Render Dashboard и вручную заполните AI_API_KEY
+# (помечен sync: false ниже, потому что секреты не должны лежать в репозитории).
+
+databases:
+  - name: ai-job-analyzer-db
+    plan: free
+    databaseName: ai_job_analyzer
+    user: ai_job_analyzer
+
+services:
+  - type: redis
+    name: ai-job-analyzer-redis
+    plan: free
+    ipAllowList: [] # доступ только из сервисов этого же Render-аккаунта
+
+  - type: web
+    name: ai-job-analyzer-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ai-job-analyzer-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: ai-job-analyzer-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: ai-job-analyzer-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: ai-job-analyzer-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: AI_PROVIDER
+        value: gemini
+      - key: AI_API_KEY
+        sync: false # заполнить вручную в Render Dashboard после деплоя
+      - key: AI_MODEL
+        value: gemini-2.5-flash
+      - key: DEBUG
+        value: "false"
+      - key: CORS_ORIGINS
+        value: https://your-frontend.vercel.app # заменить на реальный домен фронтенда после деплоя на Vercel
+
+  - type: worker
+    name: ai-job-analyzer-worker
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A app.celery_app worker --loglevel=info
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ai-job-analyzer-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: ai-job-analyzer-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: ai-job-analyzer-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: ai-job-analyzer-redis
+          property: connectionString
+      - key: AI_PROVIDER
+        value: gemini
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        value: gemini-2.5-flash
