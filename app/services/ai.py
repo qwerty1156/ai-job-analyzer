@@ -1,15 +1,10 @@
-"""
-Вызов LLM (Anthropic Claude) для анализа вакансии.
-
-Принцип: LLM -> structured output -> Pydantic. Модель обязана вызвать
-инструмент submit_analysis со схемой, сгенерированной из AIAnalysisResult —
-никакого парсинга свободного текста регулярками.
-"""
+"""Вызов LLM (Anthropic Claude) для анализа вакансии — LLM -> structured output -> Pydantic."""
 
 import anthropic
 
 from app.config import get_settings
 from app.schemas import AIAnalysisResult
+from app.services.prompts import ANALYZE_SYSTEM_PROMPT, build_analyze_user_message
 
 TOOL_NAME = "submit_analysis"
 
@@ -27,7 +22,8 @@ def analyze_with_ai(vacancy: str, skills: list[str]) -> AIAnalysisResult:
     response = client.messages.create(
         model=settings.AI_MODEL,
         max_tokens=1024,
-        messages=[{"role": "user", "content": f"Вакансия:\n{vacancy}\n\nНавыки: {skills}"}],
+        system=ANALYZE_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": build_analyze_user_message(vacancy, skills)}],
         tools=[_ANALYSIS_TOOL],
         tool_choice={"type": "tool", "name": TOOL_NAME},
     )
