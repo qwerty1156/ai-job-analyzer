@@ -42,3 +42,19 @@ class AnalysisDetail(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class JobAccepted(BaseModel):
+    job_id: str
+    status: str = "pending"
+
+
+class JobStatusResponse(BaseModel):
+    id: str
+    status: str
+    analysis: AnalysisDetail | None = None
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}

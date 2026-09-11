@@ -6,3 +6,4 @@ anthropic
 sqlalchemy
 psycopg[binary]
 redis
+celery
