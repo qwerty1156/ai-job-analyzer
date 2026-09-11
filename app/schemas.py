@@ -1,5 +1,7 @@
 """Pydantic-схемы запроса/ответа."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -9,8 +11,6 @@ class AnalyzeRequest(BaseModel):
 
 
 class AIAnalysisResult(BaseModel):
-    """Строго структурированный результат анализа, который обязан вернуть LLM."""
-
     match_percent: int = Field(..., ge=0, le=100)
     matched_skills: list[str] = Field(default_factory=list)
     missing_skills: list[str] = Field(default_factory=list)
@@ -19,4 +19,26 @@ class AIAnalysisResult(BaseModel):
 
 
 class AnalyzeResponse(AIAnalysisResult):
-    pass
+    model_config = {"from_attributes": True}
+
+
+class AnalysisListItem(BaseModel):
+    id: int
+    match_percent: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AnalysisDetail(BaseModel):
+    id: int
+    vacancy: str
+    skills: list[str]
+    match_percent: int
+    matched_skills: list[str]
+    missing_skills: list[str]
+    recommendations: list[str]
+    summary: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
