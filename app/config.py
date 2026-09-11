@@ -13,6 +13,7 @@ class Settings:
     APP_VERSION: str = os.getenv("APP_VERSION", "0.1.0")
     DEBUG: bool = os.getenv("DEBUG", "true").lower() in ("1", "true", "yes")
 
+    AI_PROVIDER: str = os.getenv("AI_PROVIDER", "none")
     AI_API_KEY: str | None = os.getenv("AI_API_KEY")
     AI_MODEL: str = os.getenv("AI_MODEL", "claude-sonnet-4-6")
 
