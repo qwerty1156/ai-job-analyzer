@@ -21,10 +21,15 @@ def verify_password(password: str, hashed_password: str) -> bool:
 def create_access_token(user_id: int) -> str:
     settings = get_settings()
     now = datetime.now(timezone.utc)
-    payload = {"sub": str(user_id), "iat": now, "exp": now + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)}
+    payload = {
+        "sub": str(user_id),
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.JWT_EXPIRE_MINUTES),
+    }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict:
+    """Поднимает jwt.PyJWTError (или подклассы), если токен невалиден/истёк."""
     settings = get_settings()
     return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
