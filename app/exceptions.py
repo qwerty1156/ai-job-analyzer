@@ -32,3 +32,13 @@ class AITimeoutError(AIServiceUnavailableError):
 class AIInvalidResponseError(AppError):
     status_code = 500
     error_code = "ai_invalid_response"
+
+
+class AuthError(AppError):
+    status_code = 401
+    error_code = "unauthorized"
+
+
+class ConflictError(AppError):
+    status_code = 409
+    error_code = "conflict"
