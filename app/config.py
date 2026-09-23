@@ -51,7 +51,7 @@ class Settings:
     MAX_RESUME_SIZE_MB: int = _get_int("MAX_RESUME_SIZE_MB", 5)
 
     # --- База данных (Этап 8) -------------------------------------------
-        DATABASE_URL: str = os.getenv(
+    DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
         "postgresql+psycopg://postgres:postgres@localhost:5432/ai_job_analyzer",
     )
