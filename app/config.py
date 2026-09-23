@@ -51,10 +51,13 @@ class Settings:
     MAX_RESUME_SIZE_MB: int = _get_int("MAX_RESUME_SIZE_MB", 5)
 
     # --- База данных (Этап 8) -------------------------------------------
-    DATABASE_URL: str = os.getenv(
+        DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
         "postgresql+psycopg://postgres:postgres@localhost:5432/ai_job_analyzer",
     )
+
+    if DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
 
     # --- Redis / кэш (Этап 10) ------------------------------------------
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
