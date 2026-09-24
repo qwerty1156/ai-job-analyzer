@@ -1,266 +1,253 @@
-# AI Job Analyzer
+AI Job Analyzer
 
-Production-like backend (+ простой frontend), который анализирует, насколько
-кандидат подходит вакансии — по вручную введённым навыкам или по загруженному
-резюме (PDF/DOCX) — и объясняет результат: что совпадает, чего не хватает и что
-стоит подтянуть.
+Сервис для сравнения резюме с вакансией и объяснения результата. Загрузите PDF или DOCX, вставьте описание вакансии и получите процент соответствия, совпавшие навыки, пробелы и рекомендации. В проекте есть веб-интерфейс, REST API и отдельный сценарий фонового анализа по вручную введённым навыкам.
 
-## What it does
+Исходный код · API и Swagger UI · Инструкция по развёртыванию
 
-1. Пользователь регистрируется и логинится (JWT).
-2. Загружает резюме (PDF/DOCX) — сервис извлекает текст и достаёт из него навыки,
-   опыт и образование (через AI или встроенную эвристику).
-3. Вставляет текст вакансии и запускает сопоставление.
-4. Получает: процент соответствия, список совпавших и недостающих навыков,
-   пробелы по опыту, конкретные рекомендации и краткий разбор вакансии.
-5. Может вернуться к истории прошлых анализов в любой момент.
+Состояние публичного демо. Ссылка выше ведёт к API, а не к готовому примеру анализа. доступны API, PostgreSQL, Redis и фронтенд, но отдельный Celery worker на бесплатном Render не был запущен: задачи /analyze в таком окружении не обрабатываются. Запрос к Gemini тогда вернул 503 AI unavailable, поэтому работу полного AI-сценария в публичном демо пока нельзя считать подтверждённой. Локальный запуск с AI_PROVIDER=none позволяет попробовать основные сценарии без ключа.
 
-## Features
+Как это работает
 
-- Анализ вакансии по списку навыков — асинхронно, через очередь (`POST /analyze` → `202` → `GET /jobs/{id}`).
-- Анализ резюме против вакансии с собственным **scoring engine**: AI только
-  извлекает факты (0.0–1.0 по 5 измерениям), итоговый процент считает backend
-  по прозрачной взвешенной формуле — не «AI так сказал».
-- Загрузка резюме (PDF/DOCX) с автоматическим извлечением навыков, опыта и образования.
-- История анализов, привязанная к пользователю (JWT-авторизация).
-- Redis-кэш: одинаковая вакансия + одинаковые навыки не гоняются в AI повторно.
-- Structured output вместо парсинга текста: LLM обязан вернуть строго
-  типизированный JSON, который сразу валидируется Pydantic.
-- Понятные HTTP-коды ошибок (400/401/404/409/429/500/503) — ни один плохой
-  запрос или сбой AI не роняет сервис.
-- Структурированное логирование без утечки секретов (API-ключей, паролей, токенов).
-- Простой веб-интерфейс (vanilla HTML/CSS/JS, без сборки).
-- Полностью поднимается одной командой: `docker compose up`.
+Пользователь регистрируется или входит и получает JWT-токен.
 
-## Tech Stack
+Загружает резюме (PDF/DOCX); приложение извлекает текст и сохраняет профиль с навыками, опытом и образованием.
 
-| Слой | Технологии |
-|---|---|
-| API | FastAPI, Pydantic v2, Uvicorn |
-| AI | Google Gemini API (structured output / `response_schema`) |
-| БД | PostgreSQL, SQLAlchemy 2.0 (`psycopg` v3) |
-| Кэш / брокер очереди | Redis |
-| Фоновые задачи | Celery |
-| Авторизация | JWT (`PyJWT`), `passlib[bcrypt]` |
-| Парсинг резюме | `pypdf`, `python-docx` |
-| Тесты | `pytest`, SQLite in-memory, мокнутый Celery |
-| Frontend | Чистый HTML/CSS/JS, без фреймворков |
-| Инфраструктура | Docker, Docker Compose |
-| Деплой | Render/Railway (backend), Vercel (frontend) |
+Отправляет текст вакансии и идентификатор резюме в POST /match.
 
-## Architecture
+Получает процент, списки совпадений и пробелов, рекомендации и расшифровку оценки. Результат сохраняется в истории пользователя.
 
-```
-                     ┌────────────────────────────────────────────┐
-                     │                  FastAPI                   │
-                     │                                            │
-POST /register ──────┼──▶ app/api/auth.py ──▶ services/security   │
-POST /login    ──────┤                                            │
-GET  /me       ──────┤                                            │
-                     │                                            │
-POST /analyze  ──────┼──▶ services/analyzer.enqueue_analysis()    │
-                     │        └─▶ Job (PostgreSQL, status=pending)│
-                     │        └─▶ Celery .delay() ──▶ 202 Accepted│
-                     │                                            │
-GET  /jobs/{id}──────┼──▶ читает статус Job / готовый Analysis    │
-GET  /analyses ──────┼──▶ история анализов текущего пользователя  │
-GET  /analyses/{id}──┤                                            │
-                     │                                            │
-POST /resume   ──────┼──▶ services/resume_service                 │
-                     │        PDF/DOCX → extract → clean → AI     │
-                     │        → skills → PostgreSQL (Resume)      │
-                     │                                            │
-POST /match    ──────┼──▶ services/matching                       │
-                     │        AI → extraction (факты 0.0-1.0)     │
-                     │        Backend → scoring engine (decision) │
-                     └────────────────────────────────────────────┘
-                              │                    │
-                     ┌────────▼─────────┐  ┌───────▼────────┐
-                     │  Celery worker    │  │   PostgreSQL   │
-                     │  process_analysis_│  │ users/resumes/ │
-                     │  job:              │  │ analyses/jobs │
-                     │  Redis? → AI/      │  └────────────────┘
-                     │  fallback → БД     │
-                     └────────┬───────────┘
-                              │
-                        ┌─────▼─────┐
-                        │   Redis   │  кэш + брокер Celery
-                        └───────────┘
+Есть и второй путь: POST /analyze принимает текст вакансии и список навыков, возвращает 202 с job_id; клиент запрашивает результат через GET /jobs/{job_id}. Для этого пути нужен запущенный Celery worker.
 
-Frontend (frontend/index.html) ──HTTP/JSON──▶ FastAPI (CORS разрешён)
-```
+Как устроена оценка /match
 
-**Ключевой архитектурный принцип:** `AI → extraction, backend → decision`.
-Модель никогда не считает финальные бизнес-решения (итоговый процент
-соответствия) — она только извлекает факты в строго заданном формате
-(`response_schema`), а решение (`match_percent`) принимает прозрачная
-формула в `app/services/scoring.py`.
+Gemini (либо встроенная эвристика в режиме без AI) оценивает пять составляющих от 0 до 1. Итоговый процент вычисляет Python-код в app/services/scoring.py:
 
-**Про `POST /analyze` vs `POST /match`:** `/analyze` — асинхронный (создаёт
-`Job`, отвечает `202`, результат и ошибки AI видны через `GET /jobs/{id}` как
-`status: failed` + `error_message`). `/resume` и `/match` — синхронные:
-там сбои AI сразу возвращаются HTTP-кодом (429/503/500). Осознанный выбор:
-`/analyze` — самый частый и потенциально долгий путь, вынесен в фон;
-`/resume`/`/match` — разовые операции с одним файлом/одним запросом, где
-мгновенный ответ уместнее.
+Составляющая
 
-## API
+Вес
 
-Автогенерируемый Swagger: `<backend-url>/docs`. Кратко:
+Навыки
 
-| Метод | Путь | Авторизация | Описание |
-|---|---|:---:|---|
-| GET | `/` | нет | health-check |
-| POST | `/register` | нет | регистрация (email + пароль) |
-| POST | `/login` | нет | логин → JWT `access_token` |
-| GET | `/me` | да | текущий пользователь |
-| POST | `/analyze` | да | поставить анализ вакансии в очередь → `202` + `job_id` |
-| GET | `/jobs/{id}` | да | статус задачи: `pending`/`processing`/`completed`/`failed` |
-| GET | `/analyses` | да | история анализов (сводка) |
-| GET | `/analyses/{id}` | да | полная запись анализа |
-| POST | `/resume` | да | загрузить резюме (PDF/DOCX) → извлечённые навыки |
-| POST | `/match` | да | сопоставить резюме с вакансией (свой scoring engine) |
+50%
 
-Коды ошибок:
+Опыт
 
-| Ситуация | HTTP | `error` |
-|---|:---:|---|
-| Невалидные входные данные (пустая/длинная вакансия, пустой `skills`, битый файл резюме) | 400 | `invalid_request` |
-| Нет/невалиден токен, неверный email/пароль | 401 | `unauthorized` |
-| Ресурс не найден / принадлежит другому пользователю | 404 | `not_found` |
-| Email уже занят | 409 | `conflict` |
-| Лимит запросов к AI (`/resume`, `/match`) | 429 | `ai_rate_limited` |
-| AI недоступен / нет ключа / таймаут | 503 | `ai_service_unavailable` / `ai_timeout` |
-| AI ответил не тем форматом | 500 | `ai_invalid_response` |
+20%
 
-## Local Setup
+Образование
 
-### Вариант A — Docker (рекомендуется)
+10%
 
-```bash
+Инструменты
+
+10%
+
+Прочее
+
+10%
+
+Ответ содержит score_breakdown: компоненты, веса и вклад каждого компонента. Это оценка соответствия по правилам приложения, а не вероятность получить работу. Для /analyze используется другой формат результата (AIAnalysisResult): его процент не вычисляется формулой /match.
+
+Возможности и стек
+
+Область
+
+Реализация
+
+API
+
+FastAPI, Pydantic, автоматическая документация OpenAPI
+
+Авторизация
+
+Регистрация, вход, JWT; история и задачи доступны только их владельцу
+
+Резюме
+
+Загрузка PDF/DOCX, извлечение текста через pypdf/python-docx
+
+Анализ
+
+Google Gemini со структурированным ответом или локальная keyword-эвристика (AI_PROVIDER=none)
+
+Оценка
+
+Взвешенная формула и расшифровка для /match
+
+Данные
+
+PostgreSQL, SQLAlchemy; Redis для кэша и очереди Celery
+
+Интерфейс
+
+Статический HTML/CSS/JavaScript без сборки
+
+Проверки
+
+pytest, изолированная SQLite в тестах, подмена очереди задач
+
+/match и /resume отвечают синхронно. /analyze записывает задачу в PostgreSQL, передаёт её через Redis worker-процессу и отдаёт статус для опроса клиентом. Повторяющийся анализ вакансии и навыков может обслуживаться из Redis-кэша.
+
+Быстрый старт
+
+Нужны Git, Docker и Docker Compose.
+
+git clone https://github.com/qwerty1156/ai-job-analyzer.git
+cd ai-job-analyzer
+cp .env.example .env
 docker compose up --build
-```
 
-Поднимает всё: `api` (:8000), `worker` (Celery), `db` (PostgreSQL :5432),
-`redis` (:6379), `frontend` (:3000).
+В PowerShell вместо cp можно выполнить Copy-Item .env.example .env. После запуска откройте интерфейс и Swagger UI. В поле API URL интерфейса укажите http://localhost:8000: в текущем HTML по умолчанию стоит адрес опубликованного API.
 
-- Swagger: http://localhost:8000/docs
-- Веб-интерфейс: http://localhost:3000
+Шаблон запускает AI_PROVIDER=none: внешний AI-ключ не нужен, но извлечение опыта и качество рекомендаций ограничены встроенной эвристикой. Для Gemini задайте в .env AI_PROVIDER=gemini и AI_API_KEY=<ваш_ключ>, затем перезапустите api и worker. Не добавляйте .env в git.
 
-### Вариант B — без Docker
+Запуск Python без Docker
 
-Нужны локально запущенные PostgreSQL и Redis (или `docker compose up db redis`
-только для них).
+Нужны работающие PostgreSQL и Redis. Подключения настройте в .env через DATABASE_URL, REDIS_URL, CELERY_BROKER_URL и CELERY_RESULT_BACKEND (в шаблоне указаны локальные адреса).
 
-```bash
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env             # и при желании отредактировать
-```
-
-Терминал 1:
-```bash
 uvicorn app.main:app --reload
-```
 
-Терминал 2 (обязателен, иначе `/analyze` будет вечно висеть в `pending`):
-```bash
+В PowerShell активация: .venv\Scripts\Activate.ps1. В другом терминале из корня проекта с тем же окружением:
+
 celery -A app.celery_app worker --loglevel=info
-```
 
-Фронтенд — просто откройте `frontend/index.html` в браузере.
+Worker необходим для /analyze; без него задача останется в ожидании. Статический интерфейс лежит в frontend/index.html. Для локальной работы удобнее запуск через Compose, который поднимает интерфейс на порту 3000.
 
-### Включить настоящий AI-анализ
+API
 
-По умолчанию `AI_PROVIDER=none` — сервис работает на встроенной keyword-логике,
-без ключей. Чтобы включить AI: получите бесплатный ключ на
-https://aistudio.google.com/apikey, в `.env` укажите `AI_PROVIDER=gemini` и
-`AI_API_KEY=...`, перезапустите `api` и `worker`.
+Полные схемы запросов и ответов доступны в /docs.
 
-> Почему Gemini, а не Anthropic API: у Anthropic нет постоянного бесплатного
-> тарифа (только платный pay-per-token), а у Google Gemini есть настоящий
-> бесплатный тариф (модели Flash/Flash-Lite). Интеграция с провайдером
-> изолирована в `app/services/ai.py` — переключить на другой LLM несложно.
+Метод
 
-## Environment Variables
+Путь
 
-| Переменная | Назначение | По умолчанию |
-|---|---|---|
-| `AI_PROVIDER` | `none` (без AI) или `gemini` | `none` |
-| `AI_API_KEY` | Ключ Gemini API | пусто |
-| `AI_MODEL` | Модель Gemini | `gemini-2.5-flash` |
-| `AI_TIMEOUT_SECONDS` | Таймаут запроса к AI | `30` |
-| `MIN_VACANCY_LENGTH` / `MAX_VACANCY_LENGTH` | Ограничения длины текста вакансии | `10` / `8000` |
-| `MAX_RESUME_SIZE_MB` | Максимальный размер файла резюме | `5` |
-| `DATABASE_URL` | Строка подключения PostgreSQL (`+psycopg`) | `postgresql+psycopg://postgres:postgres@localhost:5432/ai_job_analyzer` |
-| `REDIS_URL` | Redis для кэша | `redis://localhost:6379/0` |
-| `CACHE_TTL_SECONDS` | TTL кэша анализа | `3600` |
-| `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | Redis для очереди Celery | `redis://localhost:6379/0` |
-| `JWT_SECRET` | Секрет подписи JWT — **сменить в проде** | dev-заглушка |
-| `JWT_ALGORITHM` | Алгоритм подписи | `HS256` |
-| `JWT_EXPIRE_MINUTES` | Время жизни токена | `1440` |
-| `CORS_ORIGINS` | Разрешённые origin'ы через запятую | `*` |
+Назначение
 
-Полный шаблон — `.env.example`. Реальный `.env` **никогда** не коммитится
-(см. `.gitignore`) — секреты только через переменные окружения.
+GET
 
-## Docker
+/
 
-```bash
-docker compose up --build
-```
+Проверка доступности API
 
-`docker-compose.yml` включает 5 сервисов: `api`, `worker`, `db` (Postgres),
-`redis`, `frontend` (nginx, отдаёт статику). `Dockerfile` — общий для `api` и
-`worker` образ (разный `command` в compose).
+POST
 
-## Tests
+/register
 
-```bash
+Создать пользователя
+
+POST
+
+/login
+
+Получить Bearer JWT
+
+GET
+
+/me
+
+Данные текущего пользователя
+
+POST
+
+/resume
+
+Загрузить резюме как multipart поле file
+
+POST
+
+/match
+
+Сопоставить resume_id и vacancy
+
+POST
+
+/analyze
+
+Отправить vacancy и skills в очередь; ответ 202
+
+GET
+
+/jobs/{job_id}
+
+Узнать статус pending / processing / completed / failed
+
+GET
+
+/analyses
+
+Получить историю анализов
+
+GET
+
+/analyses/{analysis_id}
+
+Получить подробный результат
+
+Все маршруты, кроме /, /register и /login, требуют Authorization: Bearer <access_token>.
+
+Пример запроса после регистрации/входа и загрузки резюме:
+
+curl -X POST http://localhost:8000/match \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"resume_id":1,"vacancy":"Ищем Python backend-разработчика со знанием FastAPI, PostgreSQL и Docker."}'
+
+resume_id нужно взять из ответа POST /resume; подставьте действующий токен. Пример работы без файла: отправьте {"vacancy":"Ищем Python backend-разработчика со знанием FastAPI.","skills":["Python","FastAPI"]} в POST /analyze, затем опрашивайте /jobs/{job_id}. В этом сценарии должен работать worker.
+
+Конфигурация и развёртывание
+
+Полный список параметров и значения для локальной разработки — в .env.example. Основные настройки:
+
+Переменная
+
+Назначение
+
+AI_PROVIDER, AI_API_KEY, AI_MODEL
+
+Режим none/gemini, ключ и модель AI
+
+DATABASE_URL
+
+Подключение к PostgreSQL
+
+REDIS_URL
+
+Кэш
+
+CELERY_BROKER_URL, CELERY_RESULT_BACKEND
+
+Брокер и результаты фоновых задач
+
+JWT_SECRET
+
+Секрет подписи токенов; задайте собственное значение в деплое
+
+CORS_ORIGINS
+
+Разрешённые адреса фронтенда
+
+MAX_RESUME_SIZE_MB, MIN_VACANCY_LENGTH, MAX_VACANCY_LENGTH
+
+Ограничения входных данных
+
+В репозитории есть Dockerfile, docker-compose.yml, render.yaml, vercel.json и отдельный гайд по деплою. render.yaml описывает worker, но конфигурационный файл сам по себе не означает, что worker запущен на опубликованном бесплатном окружении. Для рабочего /analyze его нужно разместить на тарифе или платформе, где доступен отдельный процесс.
+
+Тесты
+
 pip install -r requirements.txt
-pytest -v
-```
+pytest -q
 
-Используется **SQLite in-memory** вместо реального PostgreSQL (быстро,
-изолированно, без поднятой инфраструктуры) и мокнутый Celery `.delay()` —
-реальный Redis-брокер для тестов не нужен.
+Покрыты авторизация, загрузка резюме, анализ, сопоставление, scoring, история и фоновые задачи. При последней проверке автора прошло 47 тестов; это результат того запуска, а не обещание для любой среды. Тесты используют SQLite в памяти и не подтверждают доступность Gemini или работу опубликованного worker.
 
-```
-tests/
-├── test_auth.py          # регистрация, логин, /me, включая защиту от утечки пароля в логах
-├── test_analyze.py       # валидный/невалидный запрос, пустые данные, ошибка AI, authorization
-├── test_analyses.py      # история анализов, изоляция между пользователями
-├── test_resume.py        # загрузка и парсинг резюме (PDF/DOCX)
-├── test_match.py         # resume ↔ vacancy matching, ошибки AI (429/503/500)
-├── test_scoring.py       # unit-тесты scoring engine
-├── test_celery_task.py   # выполнение Celery-задачи (task.apply(), без брокера)
-└── test_health.py
-```
+Ограничения
 
-## Deployment
+AI-режим зависит от доступности и лимитов Gemini API; при проблемах возможен ответ 503.
 
-Frontend → Vercel, backend → Render/Railway, PostgreSQL и Redis → managed.
-Подробный пошаговый гайд, готовые конфиги (`render.yaml`, `vercel.json`) и
-чеклист production-переменных — в **[DEPLOYMENT.md](./DEPLOYMENT.md)**.
+Режим AI_PROVIDER=none предназначен для локального знакомства с приложением: это keyword-эвристика, а не полноценный AI-анализ.
 
-Коротко: HTTPS — автоматически на всех трёх платформах; CORS — выставить
-`CORS_ORIGINS` на точный домен фронтенда; секреты — только через переменные
-окружения дашборда, никогда не в git.
+Для /analyze необходим Celery worker. Один лишь доступный API не означает, что фоновая очередь обрабатывается.
 
-## Future Improvements
-
-После MVP, но не раньше (см. `DEPLOYMENT.md`) — по убыванию приоритета:
-
-- CV improvement — конкретные правки резюме под вакансию.
-- Job recommendations — подбор вакансий под резюме, а не только наоборот.
-- Skill roadmap — персональный план обучения на основе пробелов.
-- Salary estimation.
-- Job comparison — сравнение нескольких вакансий между собой.
-- ATS-style resume check — проверка на проходимость через ATS-фильтры.
-- Rate limiting и usage limits на уровне самого API (не только проброс 429 от AI).
-- Analytics — агрегированная статистика по анализам пользователя.
-- Alembic-миграции вместо `create_all()` при старте.
-- Ретраи с backoff для сбоев AI в Celery-задаче.
-- Refresh-токены / отзыв токенов.
-- WebSocket/SSE вместо поллинга `GET /jobs/{id}`.
+Процент соответствия помогает сравнить требования вакансии с профилем кандидата и не гарантирует приглашения на собеседование.
