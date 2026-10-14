@@ -1,4 +1,39 @@
-AI Job Analyzer
+# AI Job Analyzer
+
+Resume-to-vacancy matching API built with **FastAPI, SQLAlchemy, PostgreSQL, Redis and Celery**.
+Upload a PDF/DOCX resume, compare it with a job description, and inspect matching skills,
+gaps and a weighted score. Includes JWT authentication and user-owned analysis history.
+
+## Try a complete local scenario
+
+```bash
+python -m venv .venv
+# Linux/macOS: source .venv/bin/activate
+# Windows: .venv\Scripts\activate
+python -m pip install -r requirements.txt
+python scripts/demo.py
+```
+
+The script calls the actual API in-process: registration → login → DOCX upload → matching → history.
+It uses a disposable SQLite database and the built-in keyword heuristic. It needs no API key,
+PostgreSQL, Redis or paid service. This demonstrates the synchronous API path; it does not
+validate Gemini or the Celery worker. The score is a rule-based match estimate, not a hiring probability.
+
+For the web interface and background queue, follow the Docker Compose instructions below.
+[Frontend](https://ai-job-analyzer-delta.vercel.app) · [Deployment notes](DEPLOYMENT.md)
+
+## Engineering scope
+
+- Separate API, service, persistence and scoring modules.
+- JWT authentication and ownership checks for stored results.
+- PDF/DOCX parsing, structured analysis and explainable scoring.
+- Optional background jobs using Celery and Redis.
+- Pytest coverage with SQLite and mocked external dependencies.
+
+Built with AI-assisted development. See the source, tests and runnable demo for evidence of behavior.
+Public hosting has known limitations described below; the online end-to-end AI flow is not claimed as verified.
+
+## Detailed project notes
 
 Сервис для сравнения резюме с вакансией и объяснения результата. Загрузите PDF или DOCX, вставьте описание вакансии и получите процент соответствия, совпавшие навыки, пробелы и рекомендации. В проекте есть веб-интерфейс, REST API и отдельный сценарий фонового анализа по вручную введённым навыкам.
 
